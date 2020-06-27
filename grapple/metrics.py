@@ -397,14 +397,17 @@ class ParticleMETResolution(METResolution):
         hist, _ = np.histogram(res, bins=self.bins)
         hist_p, _ = np.histogram(res_p, bins=self.bins)
         hist_met, _ = np.histogram(res_t, bins=self.bins)
+        hist_2, _, _ = np.histogram2d(gm, res+gm, bins=25, range=(self.bins_2, self.bins_2))        
         if self.dist is None:
             self.dist = hist + EPS
             self.dist_p = hist_p + EPS
             self.dist_met = hist_met + EPS
+            self.dist_2 = hist_2 + EPS
         else:
             self.dist += hist
             self.dist_p += hist_p
             self.dist_met += hist_met
+            self.dist_2 = hist_2
 
     def plot(self, path):
         plt.clf()
@@ -427,6 +430,16 @@ class ParticleMETResolution(METResolution):
         plt.legend()
         for ext in ('pdf', 'png'):
             plt.savefig(path + '.' + ext)
+
+        fig, ax = plt.subplots()
+        plt.imshow(self.dist_2, extent=[0,300,0,300])
+        plt.xlabel('True (GeV)')
+        plt.ylabel('Predicted (GeV)')
+        plt.colorbar()
+        fig.tight_layout()
+
+        for ext in ('pdf', 'png'):
+            plt.savefig(path + '_2D.' + ext)
 
         return {'model': (mean, np.sqrt(var)), 'puppi': (mean_p, np.sqrt(var_p))}
 
@@ -602,4 +615,5 @@ class PapuMetrics(object):
         plt.legend()
         for ext in ('pdf', 'png'):
             plt.savefig(path + '_err.' + ext)
+
 

@@ -1,5 +1,5 @@
-dataset_pattern: /data/t3home000/snarayan/papu/data_v3/TTBar_*npz 
-output: /data/t3home000/snarayan/papu/expts/3/16_6_20_8x8_mse/ 
+dataset_pattern: /nobackup/users/bmaier/puma/ttbar_v3/TTBar_*npz 
+output: /nobackup/users/bmaier/puma/expts/3/256_6_20_16_mse/ 
 n_epochs: 100
 
 embedding_size: 256
@@ -21,6 +21,6 @@ lr_policy: 'cyclic'
 #num_max_files: 1 
 num_max_particles: 9000
 #min_met: 50
-plot: /home/snarayan/public_html/figs/papu/scan3/256_6_20_16_mse/
+plot: /nobackup/users/bmaier/scan3/256_6_20_16_mse/
 pt_weight: True
 #beta: True
