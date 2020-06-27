@@ -431,8 +431,10 @@ class ParticleMETResolution(METResolution):
         for ext in ('pdf', 'png'):
             plt.savefig(path + '.' + ext)
 
+        plt.clf()
         fig, ax = plt.subplots()
-        plt.imshow(self.dist_2, extent=[0,300,0,300])
+        plt.imshow(self.dist_2.T, vmin=0.5, extent=(self.bins_2 + self.bins_2),
+                   origin='lower')
         plt.xlabel('True (GeV)')
         plt.ylabel('Predicted (GeV)')
         plt.colorbar()
