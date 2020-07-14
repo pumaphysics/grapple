@@ -259,10 +259,18 @@ class PapuDataset(IterableDataset):
             self.min_met = config.min_met 
         else:
             self.min_met = None 
+        self.config = config
+
+        if hasattr(config, 'hadronic_recoil'):
+            self.hadronic_recoil = config.hadronic_recoil
+        else:
+            self.hadronic_recoil = False
         self._len = self._get_len() 
 
         branches = ['pt', 'eta', 'phi', 'e', 'puppi', 'pdgid', 'hardfrac', 'cluster_idx', 'vtxid',
                     'cluster_r', 'cluster_hardch_pt', 'cluster_puch_pt', 'npv']
+        if self.hadronic_recoil:
+            branches.append('isolep')
         self.b2i = {b:i for i,b in enumerate(branches)}
 
     def __len__(self):
@@ -281,28 +289,49 @@ class PapuDataset(IterableDataset):
             raw_data = np.load(f)
             data = raw_data['x']
             met = raw_data['met']
+            if hasattr(self.config, 'hadronic_recoil'):
+                recoil = raw_data['recoil']
 
             data = data[:, :self.n_particles, :]
 
-            X = data[:,:,[i for b,i in self.b2i.items() if b != 'hardfrac']]
+            if hasattr(self.config, 'hadronic_recoil'):
+                X = data[:,:,[i for b,i in self.b2i.items() if b not in ('hardfrac', 'puppi', 'isolep')]]
+            else:
+                X = data[:,:,[i for b,i in self.b2i.items() if b not in ('hardfrac', 'puppi')]]
             y = data[:,:,self.b2i['hardfrac']]
             p = data[:,:,self.b2i['puppi']]
 
             mask = (data[:, :, self.b2i['pt']] > 0)
 
             neutral_mask = (data[:, :, self.b2i['vtxid']] < 0)
+            if hasattr(self.config, 'hadronic_recoil'):
+                isolep_mask = (data[:, :, self.b2i['isolep']] == 1)
 
             idx = np.arange(X.shape[0])
             np.random.shuffle(idx)
             for i in idx:
-                yield {
-                    'x': X[i, :, :], 
-                    'y': y[i, :], 
-                    'puppi': p[i, :], 
-                    'mask': mask[i, :], 
-                    'neutral_mask': neutral_mask[i, :],
-                    'genmet': met[i, :]
-                }
+                if not hasattr(self.config, 'hadronic_recoil'):
+                    yield {
+                        'x': X[i, :, :], 
+                        'y': y[i, :], 
+                        'puppi': p[i, :], 
+                        'mask': mask[i, :], 
+                        'neutral_mask': neutral_mask[i, :],
+                        'genmet': met[i, :]
+                    }
+                
+                else:
+                    yield {
+                        'x': X[i, :, :], 
+                        'y': y[i, :], 
+                        'puppi': p[i, :], 
+                        'mask': mask[i, :], 
+                        'neutral_mask': neutral_mask[i, :],
+                        'isolep_mask': isolep_mask[i, :],
+                        'genmet': met[i, :],
+                        'genU': recoil[i, :]
+                    }
+                    
 
     @staticmethod
     def collate_fn(samples):

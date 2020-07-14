@@ -6,6 +6,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import pickle
+import math
 
 import pyjet
 
@@ -259,8 +260,8 @@ class JetResolution(object):
 class METResolution(object):
     def __init__(self, bins=np.linspace(-100, 100, 40)):
         self.bins = bins
-        self.bins_2 = (0, 400)
-        self.bins_met1 = (0, 400)
+        self.bins_2 = (0, 300)
+        self.bins_met1 = (0, 300)
         self.reset()
 
     def reset(self):
@@ -379,43 +380,74 @@ class METResolution(object):
 
 class ParticleMETResolution(METResolution):
     @staticmethod
-    def _compute_res(pt, phi, w, gm):
+    def _compute_res(pt, phi, w, gm, gmphi):
         pt = pt * w
         px = pt * np.cos(phi)
         py = pt * np.sin(phi)
-        metx = np.sum(px, axis=-1)
-        mety = np.sum(py, axis=-1)
+        metx = (-1)*np.sum(px, axis=-1)
+        mety = (-1)*np.sum(py, axis=-1)
         met = np.sqrt(np.power(metx, 2) + np.power(mety, 2))
-        res =  met - gm # (met / gm) - 1
-        return res
+        gmx = gm * np.cos(gmphi)
+        gmy = gm * np.sin(gmphi)
+        res =  met - gm # (met / gm) - 1        
+        resx = metx - gmx
+        resy = mety - gmy
+        return res,resx,resy
 
-    def compute(self, pt, phi, w, y, baseline, gm):
-        res = self._compute_res(pt, phi, w, gm)
-        res_t = self._compute_res(pt, phi, y, gm)
-        res_p = self._compute_res(pt, phi, baseline, gm)
+    def compute(self, pt, phi, w, y, baseline, gm, gmphi):
+        res,resx,resy = self._compute_res(pt, phi, w, gm, gmphi)
+        res_t,resx_t,resy_t = self._compute_res(pt, phi, y, gm, gmphi)
+        res_p,resx_p,resy_p = self._compute_res(pt, phi, baseline, gm, gmphi)
 
         hist, _ = np.histogram(res, bins=self.bins)
+        histx, _ = np.histogram(resx, bins=self.bins)
+        histy, _ = np.histogram(resy, bins=self.bins)
         hist_p, _ = np.histogram(res_p, bins=self.bins)
+        histx_p, _ = np.histogram(resx_p, bins=self.bins)
+        histy_p, _ = np.histogram(resy_p, bins=self.bins)
         hist_met, _ = np.histogram(res_t, bins=self.bins)
+        histx_met, _ = np.histogram(resx_t, bins=self.bins)
+        histy_met, _ = np.histogram(resy_t, bins=self.bins)
         hist_2, _, _ = np.histogram2d(gm, res+gm, bins=25, range=(self.bins_2, self.bins_2))        
+        hist_2_p, _, _ = np.histogram2d(gm, res_p+gm, bins=25, range=(self.bins_2, self.bins_2))        
         if self.dist is None:
             self.dist = hist + EPS
+            self.distx = histx + EPS
+            self.disty = histy + EPS
             self.dist_p = hist_p + EPS
+            self.distx_p = histx_p + EPS
+            self.disty_p = histy_p + EPS
             self.dist_met = hist_met + EPS
+            self.distx_met = histx_met + EPS
+            self.disty_met = histy_met + EPS
             self.dist_2 = hist_2 + EPS
+            self.dist_2_p = hist_2_p + EPS
         else:
             self.dist += hist
+            self.distx += histx
+            self.disty += histy
             self.dist_p += hist_p
+            self.distx_p += histx_p
+            self.disty_p += histy_p
             self.dist_met += hist_met
-            self.dist_2 = hist_2
+            self.distx_met += histx_met
+            self.disty_met += histy_met
+            self.dist_2 += hist_2
+            self.dist_2_p += hist_2_p
 
     def plot(self, path):
         plt.clf()
         x = (self.bins[:-1] + self.bins[1:]) * 0.5
 
         mean, var = self._compute_moments(x, self.dist)
+        meanx, varx = self._compute_moments(x, self.distx)
+        meany, vary = self._compute_moments(x, self.disty)
         mean_p, var_p = self._compute_moments(x, self.dist_p)
+        meanx_p, varx_p = self._compute_moments(x, self.distx_p)
+        meany_p, vary_p = self._compute_moments(x, self.disty_p)
         mean_met, var_met = self._compute_moments(x, self.dist_met)
+        meanx_met, varx_met = self._compute_moments(x, self.distx_met)
+        meany_met, vary_met = self._compute_moments(x, self.disty_met)
 
         label = r'Model ($\delta=' + f'{mean:.1f}' + r'\pm' + f'{np.sqrt(var):.1f})$'
         plt.hist(x=x, weights=self.dist, label=label, histtype='step', bins=self.bins)
@@ -426,22 +458,68 @@ class ParticleMETResolution(METResolution):
         label = r'Truth+PF ($\delta=' + f'{mean_met:.1f}' + r'\pm' + f'{np.sqrt(var_met):.1f})$'
         plt.hist(x=x, weights=self.dist_met, label=label, histtype='step', bins=self.bins)
 
-        plt.xlabel('(Predicted-True)')
+        plt.xlabel('(Predicted - True)')
         plt.legend()
         for ext in ('pdf', 'png'):
             plt.savefig(path + '.' + ext)
 
         plt.clf()
         fig, ax = plt.subplots()
-        plt.imshow(self.dist_2.T, vmin=0.5, extent=(self.bins_2 + self.bins_2),
+
+        label = r'Model ($\delta=' + f'{meanx:.1f}' + r'\pm' + f'{np.sqrt(varx):.1f})$'
+        plt.hist(x=x, weights=self.distx, label=label, histtype='step', bins=self.bins)
+
+        label = r'Puppi ($\delta=' + f'{meanx_p:.1f}' + r'\pm' + f'{np.sqrt(varx_p):.1f})$'
+        plt.hist(x=x, weights=self.distx_p, label=label, histtype='step', bins=self.bins)
+
+        label = r'Truth+PF ($\delta=' + f'{meanx_met:.1f}' + r'\pm' + f'{np.sqrt(varx_met):.1f})$'
+        plt.hist(x=x, weights=self.distx_met, label=label, histtype='step', bins=self.bins)
+
+        plt.xlabel('(X Predicted - X True)')
+        plt.legend()
+        for ext in ('pdf', 'png'):
+            plt.savefig(path + '_x.' + ext)
+
+        plt.clf()
+        fig, ax = plt.subplots()
+
+        label = r'Model ($\delta=' + f'{meany:.1f}' + r'\pm' + f'{np.sqrt(vary):.1f})$'
+        plt.hist(x=x, weights=self.distx, label=label, histtype='step', bins=self.bins)
+
+        label = r'Puppi ($\delta=' + f'{meany_p:.1f}' + r'\pm' + f'{np.sqrt(vary_p):.1f})$'
+        plt.hist(x=x, weights=self.distx_p, label=label, histtype='step', bins=self.bins)
+
+        label = r'Truth+PF ($\delta=' + f'{meany_met:.1f}' + r'\pm' + f'{np.sqrt(vary_met):.1f})$'
+        plt.hist(x=x, weights=self.distx_met, label=label, histtype='step', bins=self.bins)
+
+        plt.xlabel('(Y Predicted - Y True)')
+        plt.legend()
+        for ext in ('pdf', 'png'):
+            plt.savefig(path + '_y.' + ext)
+
+        plt.clf()
+        fig, ax = plt.subplots()
+        plt.imshow(self.dist_2.T, extent=(self.bins_2 + self.bins_2),
                    origin='lower')
-        plt.xlabel('True (GeV)')
-        plt.ylabel('Predicted (GeV)')
+        plt.xlabel('True $p_T^{miss}$ (GeV)')
+        plt.ylabel('PUMA $p_T^{miss}$ (GeV)')
         plt.colorbar()
         fig.tight_layout()
 
         for ext in ('pdf', 'png'):
-            plt.savefig(path + '_2D.' + ext)
+            plt.savefig(path + '_2D_puma.' + ext)
+
+        plt.clf()
+        fig, ax = plt.subplots()
+        plt.imshow(self.dist_2_p.T, extent=(self.bins_2 + self.bins_2),
+                   origin='lower')
+        plt.xlabel('True $p_T^{miss}$ (GeV)')
+        plt.ylabel('PUPPI $p_T^{miss}$ (GeV)')
+        plt.colorbar()
+        fig.tight_layout()
+
+        for ext in ('pdf', 'png'):
+            plt.savefig(path + '_2D_puppi.' + ext)
 
         return {'model': (mean, np.sqrt(var)), 'puppi': (mean_p, np.sqrt(var_p))}
 

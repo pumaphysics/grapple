@@ -74,7 +74,7 @@ if __name__ == '__main__':
         # create new OrderedDict that does not contain `module.`
         from collections import OrderedDict
         model_state_dict = OrderedDict()
-        for k, v in state_dicts['model'].items():
+        for k, v in state_dicts.items():
             name = k
             if k.startswith('module'):
                 name = k[7:] # remove `module.`
@@ -82,7 +82,7 @@ if __name__ == '__main__':
         # load params
         model.load_state_dict(model_state_dict)
 
-        opt.load_state_dict(state_dict['opt'])
+        #opt.load_state_dict(state_dict['opt'])
 
         logger.info(f'Snapshot {config.from_snapshot} loaded.')
 
