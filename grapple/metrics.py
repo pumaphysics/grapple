@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pickle
 import math
+import pandas as pd
 
 import pyjet
 
@@ -102,10 +103,10 @@ class Metrics(object):
         self.add_values(yhat[:,:,1][~m], orig_y[~m], 0, 2, wnm)
         self.add_values(yhat[:,:,1][~m], orig_y[~m], 1, 3, wnm)
 
-        if self.n_steps % 50 == 0 and False:
-            print(t2n(y[0])[:10])
-            print(t2n(pred[0])[:10])
-            print(t2n(yhat[0])[:10, :])
+        #if self.n_steps % 50 == 0 and False:
+        #    print(t2n(y[0])[:10])
+        #    print(t2n(pred[0])[:10])
+        #    print(t2n(yhat[0])[:10, :])
 
         return loss, acc
 
@@ -262,6 +263,11 @@ class METResolution(object):
         self.bins = bins
         self.bins_2 = (0, 300)
         self.bins_met1 = (0, 300)
+        self.df = None
+        self.df_p = None
+        self.df_model = None
+        self.df_truth = None
+        self.df_puppi = None
         self.reset()
 
     def reset(self):
@@ -295,8 +301,9 @@ class METResolution(object):
         hist_pred, self.bins_pred = np.histogram(pred, bins=np.linspace(*(self.bins_met1) + (100,)))
         hist_p, _ = np.histogram(res_p, bins=self.bins)
         hist_pup, _ = np.histogram(res_pup, bins=self.bins)
-        hist_2, _, _ = np.histogram2d(gm, pred, bins=100, range=(self.bins_2, self.bins_2))
-        hist_2_p, _, _ = np.histogram2d(gm, pf, bins=100, range=(self.bins_2, self.bins_2))
+        hist_2, _, _ = np.histogram2d(gm, res, bins=100, range=(self.bins_2, self.bins_2))
+        hist_2_p, _, _ = np.histogram2d(gm, p, bins=100, range=(self.bins_2, self.bins_2))
+        hist_2_pup, _, _ = np.histogram2d(gm, pup, bins=100, range=(self.bins_2, self.bins_2))
         if self.dist is None:
             self.dist = hist + EPS
             self.dist_met = hist_met + EPS
@@ -305,6 +312,7 @@ class METResolution(object):
             self.dist_pup = hist_pup + EPS
             self.dist_2 = hist_2 + EPS
             self.dist_2_p = hist_2_p + EPS
+            self.dist_2_pup = hist_2_pup + EPS
         else:
             self.dist += hist
             self.dist_met += hist_met
@@ -313,6 +321,7 @@ class METResolution(object):
             self.dist_pup += hist_pup
             self.dist_2 += hist_2
             self.dist_2_p += hist_2_p
+            self.dist_2_pup += hist_2_pup
 
     @staticmethod 
     def _compute_moments(x, dist):
@@ -399,6 +408,18 @@ class ParticleMETResolution(METResolution):
         res_t,resx_t,resy_t = self._compute_res(pt, phi, y, gm, gmphi)
         res_p,resx_p,resy_p = self._compute_res(pt, phi, baseline, gm, gmphi)
 
+        #data = {'x': res, 'col_2': ['a', 'b', 'c', 'd']}
+        df = pd.DataFrame()
+        df_p = pd.DataFrame()
+        df['y'] = res
+        df_p['y'] = res_p
+        df['x'] = gm
+        df_p['x'] = gm
+
+        bins = np.linspace(0., 300., num=25)
+        df['bin'] = np.searchsorted(bins, df['x'].values)
+        df_p['bin'] = np.searchsorted(bins, df_p['x'].values)
+
         hist, _ = np.histogram(res, bins=self.bins)
         histx, _ = np.histogram(resx, bins=self.bins)
         histy, _ = np.histogram(resy, bins=self.bins)
@@ -410,6 +431,24 @@ class ParticleMETResolution(METResolution):
         histy_met, _ = np.histogram(resy_t, bins=self.bins)
         hist_2, _, _ = np.histogram2d(gm, res+gm, bins=25, range=(self.bins_2, self.bins_2))        
         hist_2_p, _, _ = np.histogram2d(gm, res_p+gm, bins=25, range=(self.bins_2, self.bins_2))        
+        #hist_2, xedges, _ = np.histogram2d(gm, res, bins=25, range=(self.bins_2, self.bins_2))        
+        #hist_2_p, _, _ = np.histogram2d(gm, res_p, bins=25, range=(self.bins_2, self.bins_2))        
+
+        self.xedges = bins
+
+        #print(res)
+        #print(self.xedges)
+
+        if self.df is None:
+            self.df = df
+            self.df_p = df_p
+        else:
+            tmp = pd.concat([self.df,df],ignore_index=True,sort=False)
+            tmp_p = pd.concat([self.df_p,df_p],ignore_index=True,sort=False)
+            #tmp_p = self.df_p.append(df_p)
+            self.df = tmp
+            self.df_p = tmp_p
+            
         if self.dist is None:
             self.dist = hist + EPS
             self.distx = histx + EPS
@@ -520,6 +559,40 @@ class ParticleMETResolution(METResolution):
 
         for ext in ('pdf', 'png'):
             plt.savefig(path + '_2D_puppi.' + ext)
+
+
+
+        ''' 
+        #print(self.df)
+        resp_df_binned = self.df.groupby('bin', as_index=False)['y'].mean()
+        print(resp_df_binned)
+        print(self.xedges)
+        resp_df_p_binned = self.df_p.groupby('bin', as_index=False)['y'].mean()
+        std_df_binned = self.df.groupby('bin', as_index=False)['y'].std()
+        std_df_p_binned = self.df_p.groupby('bin', as_index=False)['y'].std()
+
+        plt.clf()
+        fig, ax = plt.subplots()
+        #plt.plot((self.xedges[1:] + self.xedges[:-1]) / 2, resp_df_binned, label = "Model", marker='o')
+        #plt.plot((self.xedges[1:] + self.xedges[:-1]) / 2, resp_df_p_binned, label = "PUPPI", marker='o')
+        plt.plot(resp_df_binned['bin'], resp_df_binned['y'], label = "Model", marker='o')
+        plt.plot(resp_df_p_binned['bin'], resp_df_p_binned['y'], label = "PUPPI", marker='o')
+        plt.legend()
+        fig.tight_layout()
+        for ext in ('pdf', 'png'):
+            plt.savefig(path + '_response.' + ext)
+
+        plt.clf()
+        fig, ax = plt.subplots()
+        #plt.plot((self.xedges[1:] + self.xedges[:-1]) / 2, std_df_binned, label = "Model")
+        #plt.plot((self.xedges[1:] + self.xedges[:-1]) / 2, std_df_p_binned, label = "PUPPI")
+        plt.plot(std_df_binned['bin'], std_df_binned['y'], label = "Model", marker='o')
+        plt.plot(std_df_p_binned['bin'], std_df_p_binned['y'], label = "PUPPI", marker='o')
+        plt.legend()
+        fig.tight_layout()
+        for ext in ('pdf', 'png'):
+            plt.savefig(path + '_std.' + ext)
+        '''
 
         return {'model': (mean, np.sqrt(var)), 'puppi': (mean_p, np.sqrt(var_p))}
 
@@ -697,3 +770,141 @@ class PapuMetrics(object):
             plt.savefig(path + '_err.' + ext)
 
 
+class ParticleUResponse(METResolution):
+    @staticmethod
+    def _compute_res(pt, phi, w, gm, gmphi):
+        pt = pt * w
+        px = pt * np.cos(phi)
+        py = pt * np.sin(phi)
+        ux = np.sum(px, axis=-1)
+        uy = np.sum(py, axis=-1)
+        u = np.sqrt(np.power(ux, 2) + np.power(uy, 2))
+        uphi = np.arccos(ux/u)
+        gmx = np.cos(gmphi)
+        gmy = np.sin(gmphi)
+        upar = []
+        uper = []
+        for i in range(len(ux)):
+            upar.append(np.dot([ux[i],uy[i]],[gmx[i],gmy[i]]))
+            if (u[i]*u[i] < upar[i]*upar[i]):
+                print("WTF")
+            if (np.isinf(u[i])):
+                print("u inf")
+            if (np.isinf(upar[i])):
+                print("upar inf")
+            uper.append(np.sqrt(u[i]*u[i] - upar[i]*upar[i]))
+        upar = np.array(upar)
+        uper = np.array(uper)
+        #upar = np.dot([ux,uy],[gmx,gmy])
+        #uper = np.sqrt(u*u - upar*upar)
+        return u,uphi,ux,uy,gm,gmphi,gmx,gmy,upar,uper
+
+    def compute(self, pt, phi, w, y, baseline, gm, gmphi):
+        u_model,uphi_model,ux_model,uy_model,gm_model,gmphi_model,gmx_model,gmy_model,upar_model,uper_model = self._compute_res(pt, phi, w, gm, gmphi)
+        u_truth,uphi_truth,ux_truth,uy_truth,gm_truth,gmphi_truth,gmx_truth,gmy_truth,upar_truth,uper_truth = self._compute_res(pt, phi, y, gm, gmphi)
+        u_puppi,uphi_puppi,ux_puppi,uy_puppi,gm_puppi,gmphi_puppi,gmx_puppi,gmy_puppi,upar_puppi,uper_puppi = self._compute_res(pt, phi, baseline, gm, gmphi)
+
+        bins = np.linspace(0., 300., num=25)
+
+        df_model = pd.DataFrame()
+        df_truth = pd.DataFrame()
+        df_puppi = pd.DataFrame()
+        df_model['upar'] = upar_model
+        df_truth['upar'] = upar_truth
+        df_puppi['upar'] = upar_puppi
+        df_model['uper'] = uper_model 
+        df_truth['uper'] = uper_truth
+        df_puppi['uper'] = uper_puppi
+        df_model['x'] = gm
+        df_truth['x'] = gm
+        df_puppi['x'] = gm
+        df_model['xphi'] = gmphi
+        df_truth['xphi'] = gmphi
+        df_puppi['xphi'] = gmphi
+        df_model['bin'] = np.searchsorted(bins, df_model['x'].values)
+        df_truth['bin'] = np.searchsorted(bins, df_truth['x'].values)
+        df_puppi['bin'] = np.searchsorted(bins, df_puppi['x'].values)
+        df_model['u'] = u_model
+        df_truth['u'] = u_truth
+        df_puppi['u'] = u_puppi
+        df_model['uphi'] = uphi_model
+        df_truth['uphi'] = uphi_truth
+        df_puppi['uphi'] = uphi_puppi
+
+        self.xedges = bins
+
+        #print(res)
+        #print(self.xedges)
+
+        if self.df_model is None:
+            self.df_model = df_model
+            self.df_truth = df_truth
+            self.df_puppi = df_puppi
+        else:
+            tmp_model = pd.concat([self.df_model,df_model],ignore_index=True,sort=False)
+            tmp_truth = pd.concat([self.df_truth,df_truth],ignore_index=True,sort=False)
+            tmp_puppi = pd.concat([self.df_puppi,df_puppi],ignore_index=True,sort=False)
+            self.df_model = tmp_model
+            self.df_truth = tmp_truth
+            self.df_puppi = tmp_puppi
+
+    def plot(self, path):
+
+        self.df_model.to_csv(path+'_model.csv',index=False)
+        self.df_truth.to_csv(path+'_truth.csv',index=False)
+        self.df_puppi.to_csv(path+'_puppi.csv',index=False)
+
+        plt.clf()
+
+        #print(resp_df_binned)
+        #print(self.xedges)
+        upar_df_model_binned = self.df_model.groupby('bin', as_index=False)['upar'].mean()
+        upar_df_truth_binned = self.df_truth.groupby('bin', as_index=False)['upar'].mean()
+        upar_df_puppi_binned = self.df_puppi.groupby('bin', as_index=False)['upar'].mean()
+        genm_df_model_binned = self.df_model.groupby('bin', as_index=False)['x'].mean()
+        genm_df_truth_binned = self.df_truth.groupby('bin', as_index=False)['x'].mean()
+        genm_df_puppi_binned = self.df_puppi.groupby('bin', as_index=False)['x'].mean()
+
+        resp_model = np.array(upar_df_model_binned['upar'].values)/np.array(genm_df_model_binned['x'].values)
+        resp_truth = np.array(upar_df_truth_binned['upar'].values)/np.array(genm_df_truth_binned['x'].values)
+        resp_puppi = np.array(upar_df_puppi_binned['upar'].values)/np.array(genm_df_puppi_binned['x'].values)
+        print(resp_model)
+        print(upar_df_model_binned)
+        print(genm_df_model_binned)
+
+        std_df_model_binned = self.df_model.groupby('bin', as_index=False)['uper'].std()
+        std_df_truth_binned = self.df_truth.groupby('bin', as_index=False)['uper'].std()
+        std_df_puppi_binned = self.df_puppi.groupby('bin', as_index=False)['uper'].std()
+
+        binid_to_genm = []
+        for i in upar_df_model_binned['bin'].values:
+            binid_to_genm.append(self.xedges[i-1])
+
+        plt.clf()
+        fig, ax = plt.subplots()
+        plt.plot(binid_to_genm, (-1)*resp_model, label = "Model", marker='o')
+        plt.plot(binid_to_genm, (-1)*resp_truth, label = "Truth", marker='o')
+        plt.plot(binid_to_genm, (-1)*resp_puppi, label = "PUPPI", marker='o')
+        plt.legend()
+        plt.xlabel(r'Z $p_\mathrm{T}$ (GeV)')
+        plt.ylabel(r'<$U_\mathrm{II}$>/<Z $p_\mathrm{T}$>')
+        fig.tight_layout()
+        for ext in ('pdf', 'png'):
+            plt.savefig(path + '_response.' + ext)
+
+
+        plt.clf()
+        fig, ax = plt.subplots()
+        #plt.plot((self.xedges[1:] + self.xedges[:-1]) / 2, resp_df_binned, label = "Model", marker='o')
+        #plt.plot((self.xedges[1:] + self.xedges[:-1]) / 2, resp_df_p_binned, label = "PUPPI", marker='o')
+        plt.plot(binid_to_genm, np.array(std_df_model_binned['uper'].values)/((-1)*resp_model), label = "Model", marker='o')
+        plt.plot(binid_to_genm, np.array(std_df_truth_binned['uper'].values)/((-1)*resp_truth), label = "Truth", marker='o')
+        plt.plot(binid_to_genm, np.array(std_df_puppi_binned['uper'].values)/((-1)*resp_puppi), label = "PUPPI", marker='o')
+        plt.legend()
+        plt.xlabel(r'Z $p_\mathrm{T}$ (GeV)')
+        plt.ylabel(r'$\sigma(U_\mathrm{perp})$/(<$U_\mathrm{II}$>/<Z $p_\mathrm{T}$>)')
+        fig.tight_layout()
+        for ext in ('pdf', 'png'):
+            plt.savefig(path + '_perp.' + ext)
+
+        return {'model': (1, np.sqrt(1)), 'puppi': (1, np.sqrt(1))}

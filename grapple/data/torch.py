@@ -291,6 +291,8 @@ class PapuDataset(IterableDataset):
             met = raw_data['met']
             if hasattr(self.config, 'hadronic_recoil'):
                 recoil = raw_data['recoil']
+                genz = raw_data['genz']
+                recz = raw_data['recz']
 
             data = data[:, :self.n_particles, :]
 
@@ -329,7 +331,9 @@ class PapuDataset(IterableDataset):
                         'neutral_mask': neutral_mask[i, :],
                         'isolep_mask': isolep_mask[i, :],
                         'genmet': met[i, :],
-                        'genU': recoil[i, :]
+                        'genU': recoil[i, :],
+                        'genZ': genz[i, :],
+                        'recZ': recz[i, :]
                     }
                     
 
