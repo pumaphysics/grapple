@@ -94,6 +94,10 @@ if __name__ == '__main__':
     #         factor=config.lr_decay,
     #         patience=3
     #     )
+
+    def count_parameters(model):
+        return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
     metrics = PapuMetrics(config.beta)
     metrics_puppi = PapuMetrics()
     metres = ParticleMETResolution()
@@ -103,6 +107,8 @@ if __name__ == '__main__':
     if torch.cuda.device_count() > 1:
         logger.info(f'Distributing model across {torch.cuda.device_count()} GPUs')
         model = nn.DataParallel(model)
+
+        logger.info(f'Trainable model parameters: {count_parameters(model)}')
 
     if not os.path.exists(config.plot):
         os.makedirs(config.plot)

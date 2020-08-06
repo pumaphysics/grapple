@@ -604,6 +604,11 @@ class PapuMetrics(object):
             self.loss_calc = nn.MSELoss(
                     reduction='none'
                 )
+        #if not self.beta:
+        #    self.loss_calc = nn.SmoothL1Loss(
+        #            reduction='none',
+        #            delta=0.3
+        #        )
         else:
             def neglogbeta(p, q, y):
                 loss = torch.lgamma(p + q)
@@ -787,7 +792,13 @@ class ParticleUResponse(METResolution):
         for i in range(len(ux)):
             upar.append(np.dot([ux[i],uy[i]],[gmx[i],gmy[i]]))
             if (u[i]*u[i] < upar[i]*upar[i]):
-                print("WTF")
+                print("WTF1")
+                print(u[i])
+                print(upar[i])
+                upar[i] = u[i]*0.99999*(upar[i]/abs(upar[i]))
+                print("WTF2")
+                print(u[i])
+                print(upar[i])
             if (np.isinf(u[i])):
                 print("u inf")
             if (np.isinf(upar[i])):
