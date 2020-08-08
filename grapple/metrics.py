@@ -8,11 +8,66 @@ import numpy as np
 import pickle
 import math
 import pandas as pd
+from loguru import logger
+import random
 
 import pyjet
 
 EPS = 1e-4
 
+def kl_divergence(p, q, epsilon=1e-8):
+    '''
+    epsilon to avoid log(0) or divided by 0 error
+    '''
+    d_kl = (p * torch.log((p / (q+ epsilon)) + epsilon)).sum()
+    return d_kl
+
+def collapsehist(histu,histgm):
+    containszero = False
+    for e in histu:
+        if e == 0:
+            containszero = True
+            break
+
+    while containszero:
+        tmp_histu = []
+        tmp_histgm = []
+        endreached = False
+        for e in range(len(histu)):
+            if endreached:
+                break
+            if e == len(histu)-1 and histu[e] != 0:
+                tmp_histu.append(histu[e])
+                tmp_histgm.append(histgm[e])
+                break
+            elif e == len(histu)-1:
+                tmp_histgm[-1] += histgm[e]
+                break
+            if histu[e] == 0:
+                for f in range(e+1,len(histu)):
+                    if f == e+1:
+                        tmp_histu.append(histu[e]+histu[f])
+                        tmp_histgm.append(histgm[e]+histgm[f])
+                    else:
+                        tmp_histu.append(histu[f])
+                        tmp_histgm.append(histgm[f])
+                    if f == len(histu)-1:
+                        endreached = True
+                        break
+            else:
+                tmp_histu.append(histu[e])
+                tmp_histgm.append(histgm[e])
+
+        histu = tmp_histu
+        histgm = tmp_histgm
+
+        containszero = False
+        for e in histu:
+            if e == 0:
+                containszero = True
+                break
+
+    return histu,histgm
 
 class Metrics(object):
     def __init__(self, device, softmax=True):
@@ -600,15 +655,15 @@ class ParticleMETResolution(METResolution):
 class PapuMetrics(object):
     def __init__(self, beta=False):
         self.beta = beta 
-        if not self.beta:
-            self.loss_calc = nn.MSELoss(
-                    reduction='none'
-                )
         #if not self.beta:
-        #    self.loss_calc = nn.SmoothL1Loss(
-        #            reduction='none',
-        #            delta=0.3
+        #    self.loss_calc = nn.MSELoss(
+        #            reduction='none'
         #        )
+        if not self.beta:
+            self.loss_calc = nn.SmoothL1Loss(
+                    reduction='none',
+                    delta=0.3
+                )
         else:
             def neglogbeta(p, q, y):
                 loss = torch.lgamma(p + q)
@@ -775,6 +830,234 @@ class PapuMetrics(object):
             plt.savefig(path + '_err.' + ext)
 
 
+class PapuMetricsKL(object):
+    def __init__(self, beta=False):
+        self.beta = beta
+        if not self.beta:
+            self.loss_calc = nn.MSELoss(
+                    reduction='none'
+                )
+        else:
+            def neglogbeta(p, q, y):
+                loss = torch.lgamma(p + q)
+                loss -= torch.lgamma(p) + torch.lgamma(q)
+                loss += (p - 1) * torch.log(y + EPS)
+                loss += (q - 1) * torch.log(1 - y + EPS)
+                return -loss 
+            self.loss_calc = neglogbeta
+            def beta_mean(p, q):
+                return p / (p + q)
+            self.beta_mean = beta_mean 
+            def beta_std(p, q):
+                return torch.sqrt(p*q / ((p+q)**2 * (p+q+1)))
+            self.beta_std = beta_std
+        self.reset()
+
+    def reset(self):
+        self.loss = 0 
+        self.acc = 0 
+        self.pos_acc = 0
+        self.neg_acc = 0
+        self.n_pos = 0
+        self.n_particles = 0
+        self.n_steps = 0
+        self.hists = {}
+        self.bins = {}
+
+    @staticmethod
+    def make_roc(pos_hist, neg_hist):
+        pos_hist = pos_hist / pos_hist.sum()
+        neg_hist = neg_hist / neg_hist.sum()
+        tp, fp = [], []
+        for i in np.arange(pos_hist.shape[0], -1, -1):
+            tp.append(pos_hist[i:].sum())
+            fp.append(neg_hist[i:].sum())
+        auc = np.trapz(tp, x=fp)
+        plt.plot(fp, tp, label=f'AUC={auc:.3f}')
+        return fp, tp
+
+    def add_values(self, val, key, w=None, lo=0, hi=1):
+        hist, bins = np.histogram(
+                val, bins=np.linspace(lo, hi, 100), weights=w)
+        if key not in self.hists:
+            self.hists[key] = hist + EPS
+            self.bins[key] = bins
+        else:
+            self.hists[key] += hist
+
+    def compute(self, yhat, y, pt, phi, neutral_mask, ybatch, genmet, genmetphi, w=None, m=None, plot_m=None):
+        print('Computing met resolution')
+        score = t2n(torch.clamp(yhat.squeeze(-1), 0, 1))
+        charged_mask = ~neutral_mask
+        score[charged_mask] = ybatch[charged_mask]
+        y = y.view(-1)
+        if not self.beta:
+            yhat = yhat.view(-1)
+            loss = self.loss_calc(yhat, y)
+        else:
+            yhat = yhat + EPS
+            p, q = yhat[:, :, 0], yhat[:, :, 1]
+            p, q = p.view(-1), q.view(-1)
+            loss = self.loss_calc(p, q, y)
+            yhat = self.beta_mean(p, q)
+            yhat_std = self.beta_std(p, q)
+        yhat = torch.clamp(yhat, 0 , 1)
+        if w is not None:
+            wv = w.view(-1)
+            loss *= wv
+        if m is None:
+            m = torch.ones_like(y, dtype=bool)
+        if plot_m is None:
+            plot_m = m
+        m = m.view(-1).float()
+        plot_m = m.view(-1)
+        loss *= m
+
+        nan_mask = t2n(torch.isnan(loss)).astype(bool)
+
+        loss = torch.mean(loss)
+
+        randint = random.randint(0, 1000)
+        if (randint%50==0):
+            logger.info(f'RMS Loss: {t2n(loss).mean()}')
+        self.loss += t2n(loss).mean()
+
+        #compute MET
+        pt = pt * score
+        px = pt * np.cos(phi)
+        py = pt * np.sin(phi)
+        ux = np.sum(px, axis=-1)
+        uy = np.sum(py, axis=-1)
+        u = np.sqrt(np.power(ux, 2) + np.power(uy, 2))
+        uphi = np.arccos(ux/u)
+        gmx = np.cos(genmetphi)
+        gmy = np.sin(genmetphi)
+        upar = []
+        uper = []
+        for i in range(len(ux)):
+            upar.append(np.dot([ux[i],uy[i]],[gmx[i],gmy[i]]))
+            if (u[i]*u[i] < upar[i]*upar[i]):
+                upar[i] = u[i]*0.99999*(upar[i]/abs(upar[i]))
+            uper.append(np.sqrt(u[i]*u[i] - upar[i]*upar[i]))
+        upar = np.array(upar)
+
+        #logger.info(upar)
+        histu, _ = np.histogram((-1)*upar, bins=np.linspace(0, 220, 11), density=True)
+        histgm, _ = np.histogram(genmet, bins=np.linspace(0, 220, 11), density=True)
+
+        histu *= 22#*10/9 # binwidth
+        histgm *= 22#*10/9 # binwidth
+
+        #logger.info('WTF')
+        #logger.info(histu)
+        #logger.info(histgm)
+        
+        #collapse zero-entries into neighboring bins
+        hist1,hist2 = collapsehist(histu,histgm)        
+        #logger.info(hist1)
+        histgm_final,histu_final = collapsehist(hist2,hist1)        
+
+        #logger.info('HISTU')
+        #logger.info(histu_final)
+        #logger.info('HISTGM')
+        #logger.info(histgm_final)
+        #klloss = 0.001*nn.KLDivLoss(np.log(histu_final),histgm_final)
+        klloss = 0.1*kl_divergence(torch.tensor(histu_final),torch.tensor(histgm_final))
+
+        if (randint%50==0):
+            logger.info(f'KL Loss: {klloss}')
+        loss += klloss.float()
+        self.loss += klloss.float()
+        
+        if nan_mask.sum() > 0:
+            yhat = t2n(yhat)
+            print(nan_mask)
+            print(yhat[nan_mask])
+            if self.beta:
+                p, q = t2n(p), t2n(q)
+                print(p[nan_mask])
+                print(q[nan_mask])
+            print()
+
+        plot_m = t2n(plot_m).astype(bool)
+        y = t2n(y)[plot_m]
+        if w is not None:
+            w = t2n(w).reshape(-1)[plot_m]
+        yhat = t2n(yhat)[plot_m]
+        n_particles = plot_m.sum()
+
+        # let's define positive/negative by >/< 0.5
+        y_bin = y > 0.5 
+        yhat_bin = yhat > 0.5
+
+        acc = (y_bin == yhat_bin).sum() / n_particles
+        self.acc += acc
+
+        n_pos = y_bin.sum()
+        pos_acc = (y_bin == yhat_bin)[y_bin].sum() / n_pos 
+        self.pos_acc += pos_acc
+        n_neg = (~y_bin).sum()
+        neg_acc = (y_bin == yhat_bin)[~y_bin].sum() / n_neg 
+        self.neg_acc += neg_acc
+
+        self.n_pos += n_pos
+        self.n_particles += n_particles
+
+        self.n_steps += 1
+
+        self.add_values(
+            y, 'truth', w, -0.2, 1.2) 
+        self.add_values(
+            yhat, 'pred', w, -0.2, 1.2) 
+        self.add_values(
+            yhat-y, 'err', w, -2, 2)
+        
+        return loss, acc
+
+    def mean(self):
+        return ([x / self.n_steps 
+                 for x in [self.loss, self.acc, self.pos_acc, self.neg_acc]]
+                + [self.n_pos / self.n_particles])
+
+    def plot(self, path):
+        plt.clf()
+        bins = self.bins['truth'] 
+        x = (bins[:-1] + bins[1:]) * 0.5
+        hist_args = {
+                'histtype': 'step',
+                #'alpha': 0.25,
+                'bins': bins,
+                'log': True,
+                'x': x,
+                'density': True
+            }
+        plt.hist(weights=self.hists['truth'], label='Truth', **hist_args)
+        plt.hist(weights=self.hists['pred'], label='Pred', **hist_args)
+        plt.ylim(bottom=0.001, top=5e3)
+        plt.xlabel(r'$E_{\mathrm{hard}}/E_{\mathrm{tot.}}$')
+        plt.legend()
+        for ext in ('pdf', 'png'):
+            plt.savefig(path + '_e.' + ext)
+
+        plt.clf()
+        bins = self.bins['err'] 
+        x = (bins[:-1] + bins[1:]) * 0.5
+        hist_args = {
+                'histtype': 'step',
+                #'alpha': 0.25,
+                'bins': bins,
+                'log': True,
+                'x': x,
+                'density': True
+            }
+        plt.hist(weights=self.hists['err'], label='Error', **hist_args)
+        plt.ylim(bottom=0.001, top=5e3)
+        plt.xlabel(r'Prediction - Truth')
+        plt.legend()
+        for ext in ('pdf', 'png'):
+            plt.savefig(path + '_err.' + ext)
+
+
 class ParticleUResponse(METResolution):
     @staticmethod
     def _compute_res(pt, phi, w, gm, gmphi):
@@ -792,17 +1075,7 @@ class ParticleUResponse(METResolution):
         for i in range(len(ux)):
             upar.append(np.dot([ux[i],uy[i]],[gmx[i],gmy[i]]))
             if (u[i]*u[i] < upar[i]*upar[i]):
-                print("WTF1")
-                print(u[i])
-                print(upar[i])
                 upar[i] = u[i]*0.99999*(upar[i]/abs(upar[i]))
-                print("WTF2")
-                print(u[i])
-                print(upar[i])
-            if (np.isinf(u[i])):
-                print("u inf")
-            if (np.isinf(upar[i])):
-                print("upar inf")
             uper.append(np.sqrt(u[i]*u[i] - upar[i]*upar[i]))
         upar = np.array(upar)
         uper = np.array(uper)
