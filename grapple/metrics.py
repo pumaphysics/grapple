@@ -655,15 +655,15 @@ class ParticleMETResolution(METResolution):
 class PapuMetrics(object):
     def __init__(self, beta=False):
         self.beta = beta 
-        #if not self.beta:
-        #    self.loss_calc = nn.MSELoss(
-        #            reduction='none'
-        #        )
         if not self.beta:
-            self.loss_calc = nn.SmoothL1Loss(
-                    reduction='none',
-                    delta=0.3
+            self.loss_calc = nn.MSELoss(
+                    reduction='none'
                 )
+        #if not self.beta:
+        #    self.loss_calc = nn.SmoothL1Loss(
+        #            reduction='none',
+        #            delta=0.3
+        #        )
         else:
             def neglogbeta(p, q, y):
                 loss = torch.lgamma(p + q)
@@ -961,8 +961,8 @@ class PapuMetricsKL(object):
         #logger.info(histu_final)
         #logger.info('HISTGM')
         #logger.info(histgm_final)
-        #klloss = 0.001*nn.KLDivLoss(np.log(histu_final),histgm_final)
-        klloss = 0.1*kl_divergence(torch.tensor(histu_final),torch.tensor(histgm_final))
+        klloss = 0.001*nn.KLDivLoss(np.log(histu_final),histgm_final)
+        #klloss = 0.1*kl_divergence(torch.tensor(histu_final),torch.tensor(histgm_final))
 
         if (randint%50==0):
             logger.info(f'KL Loss: {klloss}')
