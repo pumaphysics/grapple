@@ -19,9 +19,6 @@ fig_size[0] = 8
 fig_size[1] = 7
 plt.rcParams["figure.figsize"] = fig_size
 
-nbins = 30
-bins = np.linspace(0., 300., num=nbins)
-
 ##
 ## Read df
 ##
