@@ -13,6 +13,7 @@ p.add_args(
     ('--from_snapshot'),
     ('--lr_schedule', p.STORE_TRUE), '--plot',
     ('--pt_weight', p.STORE_TRUE), ('--num_max_files', p.INT),
+    ('--hard_weight', p.STORE_TRUE), 
     ('--num_max_particles', p.INT), ('--dr_adj', p.FLOAT),
     ('--beta', p.STORE_TRUE),
     ('--lr_policy'), ('--grad_acc', p.INT),
@@ -158,6 +159,8 @@ if __name__ == '__main__':
             if config.pt_weight:
                 weight = x[:, :, 0] / x[:, 0, 0].reshape(-1, 1)
                 weight = weight ** 2
+            elif config.hard_weight:
+                weight = y+1e-2
             else:
                 weight = None
 
