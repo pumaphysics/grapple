@@ -1087,33 +1087,42 @@ class ParticleUResponse(METResolution):
         u_model,uphi_model,ux_model,uy_model,gm_model,gmphi_model,gmx_model,gmy_model,upar_model,uper_model = self._compute_res(pt, phi, w, gm, gmphi)
         u_truth,uphi_truth,ux_truth,uy_truth,gm_truth,gmphi_truth,gmx_truth,gmy_truth,upar_truth,uper_truth = self._compute_res(pt, phi, y, gm, gmphi)
         u_puppi,uphi_puppi,ux_puppi,uy_puppi,gm_puppi,gmphi_puppi,gmx_puppi,gmy_puppi,upar_puppi,uper_puppi = self._compute_res(pt, phi, baseline, gm, gmphi)
+        u_pf,uphi_pf,ux_pf,uy_pf,gm_pf,gmphi_pf,gmx_pf,gmy_pf,upar_pf,uper_pf = self._compute_res(pt, phi, 1, gm, gmphi)
 
         bins = np.linspace(0., 300., num=25)
 
         df_model = pd.DataFrame()
         df_truth = pd.DataFrame()
         df_puppi = pd.DataFrame()
+        df_pf = pd.DataFrame()
         df_model['upar'] = upar_model
         df_truth['upar'] = upar_truth
         df_puppi['upar'] = upar_puppi
+        df_pf['upar'] = upar_pf
         df_model['uper'] = uper_model 
         df_truth['uper'] = uper_truth
         df_puppi['uper'] = uper_puppi
+        df_pf['uper'] = uper_pf
         df_model['x'] = gm
         df_truth['x'] = gm
         df_puppi['x'] = gm
+        df_pf['x'] = gm
         df_model['xphi'] = gmphi
         df_truth['xphi'] = gmphi
         df_puppi['xphi'] = gmphi
+        df_pf['xphi'] = gmphi
         df_model['bin'] = np.searchsorted(bins, df_model['x'].values)
         df_truth['bin'] = np.searchsorted(bins, df_truth['x'].values)
         df_puppi['bin'] = np.searchsorted(bins, df_puppi['x'].values)
+        df_pf['bin'] = np.searchsorted(bins, df_pf['x'].values)
         df_model['u'] = u_model
         df_truth['u'] = u_truth
         df_puppi['u'] = u_puppi
+        df_pf['u'] = u_pf
         df_model['uphi'] = uphi_model
         df_truth['uphi'] = uphi_truth
         df_puppi['uphi'] = uphi_puppi
+        df_pf['uphi'] = uphi_pf
 
         self.xedges = bins
 
@@ -1124,16 +1133,20 @@ class ParticleUResponse(METResolution):
             self.df_model = df_model
             self.df_truth = df_truth
             self.df_puppi = df_puppi
+            self.df_pf = df_pf
         else:
             tmp_model = pd.concat([self.df_model,df_model],ignore_index=True,sort=False)
             tmp_truth = pd.concat([self.df_truth,df_truth],ignore_index=True,sort=False)
             tmp_puppi = pd.concat([self.df_puppi,df_puppi],ignore_index=True,sort=False)
+            tmp_pf = pd.concat([self.df_pf,df_pf],ignore_index=True,sort=False)
             self.df_model = tmp_model
             self.df_truth = tmp_truth
             self.df_puppi = tmp_puppi
+            self.df_pf = tmp_pf
 
     def plot(self, path):
 
+        self.df_pf.to_csv(path+'_pf.csv',index=False)
         self.df_model.to_csv(path+'_model.csv',index=False)
         self.df_truth.to_csv(path+'_truth.csv',index=False)
         self.df_puppi.to_csv(path+'_puppi.csv',index=False)
@@ -1142,20 +1155,25 @@ class ParticleUResponse(METResolution):
 
         #print(resp_df_binned)
         #print(self.xedges)
+        upar_df_pf_binned = self.df_pf.groupby('bin', as_index=False)['upar'].mean()
         upar_df_model_binned = self.df_model.groupby('bin', as_index=False)['upar'].mean()
         upar_df_truth_binned = self.df_truth.groupby('bin', as_index=False)['upar'].mean()
         upar_df_puppi_binned = self.df_puppi.groupby('bin', as_index=False)['upar'].mean()
+        genm_df_pf_binned = self.df_pf.groupby('bin', as_index=False)['x'].mean()
         genm_df_model_binned = self.df_model.groupby('bin', as_index=False)['x'].mean()
         genm_df_truth_binned = self.df_truth.groupby('bin', as_index=False)['x'].mean()
         genm_df_puppi_binned = self.df_puppi.groupby('bin', as_index=False)['x'].mean()
 
+        resp_pf = np.array(upar_df_pf_binned['upar'].values)/np.array(genm_df_pf_binned['x'].values)
         resp_model = np.array(upar_df_model_binned['upar'].values)/np.array(genm_df_model_binned['x'].values)
         resp_truth = np.array(upar_df_truth_binned['upar'].values)/np.array(genm_df_truth_binned['x'].values)
         resp_puppi = np.array(upar_df_puppi_binned['upar'].values)/np.array(genm_df_puppi_binned['x'].values)
+
         print(resp_model)
         print(upar_df_model_binned)
         print(genm_df_model_binned)
 
+        std_df_pf_binned = self.df_pf.groupby('bin', as_index=False)['uper'].std()
         std_df_model_binned = self.df_model.groupby('bin', as_index=False)['uper'].std()
         std_df_truth_binned = self.df_truth.groupby('bin', as_index=False)['uper'].std()
         std_df_puppi_binned = self.df_puppi.groupby('bin', as_index=False)['uper'].std()
@@ -1166,6 +1184,7 @@ class ParticleUResponse(METResolution):
 
         plt.clf()
         fig, ax = plt.subplots()
+        plt.plot(binid_to_genm, (-1)*resp_pf, label = "PF", marker='o')
         plt.plot(binid_to_genm, (-1)*resp_model, label = "Model", marker='o')
         plt.plot(binid_to_genm, (-1)*resp_truth, label = "Truth", marker='o')
         plt.plot(binid_to_genm, (-1)*resp_puppi, label = "PUPPI", marker='o')
@@ -1181,6 +1200,7 @@ class ParticleUResponse(METResolution):
         fig, ax = plt.subplots()
         #plt.plot((self.xedges[1:] + self.xedges[:-1]) / 2, resp_df_binned, label = "Model", marker='o')
         #plt.plot((self.xedges[1:] + self.xedges[:-1]) / 2, resp_df_p_binned, label = "PUPPI", marker='o')
+        plt.plot(binid_to_genm, np.array(std_df_pf_binned['uper'].values)/((-1)*resp_pf), label = "PF", marker='o')
         plt.plot(binid_to_genm, np.array(std_df_model_binned['uper'].values)/((-1)*resp_model), label = "Model", marker='o')
         plt.plot(binid_to_genm, np.array(std_df_truth_binned['uper'].values)/((-1)*resp_truth), label = "Truth", marker='o')
         plt.plot(binid_to_genm, np.array(std_df_puppi_binned['uper'].values)/((-1)*resp_puppi), label = "PUPPI", marker='o')
