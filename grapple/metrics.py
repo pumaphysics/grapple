@@ -22,6 +22,16 @@ def kl_divergence(p, q, epsilon=1e-8):
     d_kl = (p * torch.log((p / (q+ epsilon)) + epsilon)).sum()
     return d_kl
 
+def hist_to_df(histdata, label, path):
+    '''
+    write histdata to dataframe
+    '''
+    data = {'bin':histdata[0],'x':histdata[1][:-1]}
+    df = pd.DataFrame.from_dict(data)
+    df.to_csv(path+'_hist_'+label+'.csv')
+
+    return None
+
 def collapsehist(histu,histgm):
     containszero = False
     for e in histu:
@@ -544,13 +554,16 @@ class ParticleMETResolution(METResolution):
         meany_met, vary_met = self._compute_moments(x, self.disty_met)
 
         label = r'Model ($\delta=' + f'{mean:.1f}' + r'\pm' + f'{np.sqrt(var):.1f})$'
-        plt.hist(x=x, weights=self.dist, label=label, histtype='step', bins=self.bins)
+        _  = plt.hist(x=x, weights=self.dist, label=label, histtype='step', bins=self.bins)
+        hist_to_df(_,'model',path)
 
         label = r'Puppi ($\delta=' + f'{mean_p:.1f}' + r'\pm' + f'{np.sqrt(var_p):.1f})$'
-        plt.hist(x=x, weights=self.dist_p, label=label, histtype='step', bins=self.bins)
+        _ = plt.hist(x=x, weights=self.dist_p, label=label, histtype='step', bins=self.bins)
+        hist_to_df(_,'puppi',path)
 
         label = r'Truth+PF ($\delta=' + f'{mean_met:.1f}' + r'\pm' + f'{np.sqrt(var_met):.1f})$'
-        plt.hist(x=x, weights=self.dist_met, label=label, histtype='step', bins=self.bins)
+        _ = plt.hist(x=x, weights=self.dist_met, label=label, histtype='step', bins=self.bins)
+        hist_to_df(_,'truth',path)
 
         plt.xlabel('(Predicted - True)')
         plt.legend()
@@ -561,13 +574,16 @@ class ParticleMETResolution(METResolution):
         fig, ax = plt.subplots()
 
         label = r'Model ($\delta=' + f'{meanx:.1f}' + r'\pm' + f'{np.sqrt(varx):.1f})$'
-        plt.hist(x=x, weights=self.distx, label=label, histtype='step', bins=self.bins)
+        _ = plt.hist(x=x, weights=self.distx, label=label, histtype='step', bins=self.bins)
+        hist_to_df(_,'modelx',path)
 
         label = r'Puppi ($\delta=' + f'{meanx_p:.1f}' + r'\pm' + f'{np.sqrt(varx_p):.1f})$'
-        plt.hist(x=x, weights=self.distx_p, label=label, histtype='step', bins=self.bins)
+        _ = plt.hist(x=x, weights=self.distx_p, label=label, histtype='step', bins=self.bins)
+        hist_to_df(_,'puppix',path)
 
         label = r'Truth+PF ($\delta=' + f'{meanx_met:.1f}' + r'\pm' + f'{np.sqrt(varx_met):.1f})$'
-        plt.hist(x=x, weights=self.distx_met, label=label, histtype='step', bins=self.bins)
+        _ = plt.hist(x=x, weights=self.distx_met, label=label, histtype='step', bins=self.bins)
+        hist_to_df(_,'truthx',path)
 
         plt.xlabel('(X Predicted - X True)')
         plt.legend()
@@ -578,13 +594,16 @@ class ParticleMETResolution(METResolution):
         fig, ax = plt.subplots()
 
         label = r'Model ($\delta=' + f'{meany:.1f}' + r'\pm' + f'{np.sqrt(vary):.1f})$'
-        plt.hist(x=x, weights=self.distx, label=label, histtype='step', bins=self.bins)
+        _ = plt.hist(x=x, weights=self.distx, label=label, histtype='step', bins=self.bins)
+        hist_to_df(_,'modelx',path)
 
         label = r'Puppi ($\delta=' + f'{meany_p:.1f}' + r'\pm' + f'{np.sqrt(vary_p):.1f})$'
-        plt.hist(x=x, weights=self.distx_p, label=label, histtype='step', bins=self.bins)
+        _ = plt.hist(x=x, weights=self.distx_p, label=label, histtype='step', bins=self.bins)
+        hist_to_df(_,'puppiy',path)
 
         label = r'Truth+PF ($\delta=' + f'{meany_met:.1f}' + r'\pm' + f'{np.sqrt(vary_met):.1f})$'
-        plt.hist(x=x, weights=self.distx_met, label=label, histtype='step', bins=self.bins)
+        _ = plt.hist(x=x, weights=self.distx_met, label=label, histtype='step', bins=self.bins)
+        hist_to_df(_,'truthy',path)
 
         plt.xlabel('(Y Predicted - Y True)')
         plt.legend()
@@ -1212,3 +1231,11 @@ class ParticleUResponse(METResolution):
             plt.savefig(path + '_perp.' + ext)
 
         return {'model': (1, np.sqrt(1)), 'puppi': (1, np.sqrt(1))}
+
+
+
+
+
+
+
+
